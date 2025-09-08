@@ -1,0 +1,7 @@
+ pydub 
+ simpleaudio
+sounddevice 
+numpy 
+scipy
+matplotlib 
+pillow
