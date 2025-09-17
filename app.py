@@ -23,13 +23,19 @@ SAMPLE_RATE = 44100; CHANNELS = 1
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("DAW Pernambucana"); self.geometry("1400x900")
+        self.title("DAW Pernambucana")
+        self.geometry("1600x900") # Um bom tamanho inicial
         
+        self.configure(fg_color="#242424")
         self._create_menubar()
         
-        self.grid_columnconfigure(0, weight=1, minsize=220); self.grid_columnconfigure(1, weight=0); self.grid_columnconfigure(2, weight=4)
-        self.grid_rowconfigure(0, weight=1)
+        # --- Configuração do Grid Principal CORRETA ---
+        self.grid_rowconfigure(0, weight=1) # A linha principal (0) ocupa todo o espaço vertical
+        self.grid_columnconfigure(0, weight=1, minsize=250) # Browser
+        self.grid_columnconfigure(1, weight=0) # Divisória Vertical
+        self.grid_columnconfigure(2, weight=5) # Área Principal (5x maior que o browser)
 
+        # --- Variáveis de Estado ---
         self.tracks, self.track_count, self.output_filename_count = [], 0, 1; self.active_track = None 
         self.is_recording, self.recording_frames, self.recording_thread = False, [], None
         self.is_playing, self.playback_thread, self.metronome_thread = False, None, None
@@ -38,57 +44,83 @@ class App(ctk.CTk):
         self.current_view = 'session'; self.playback_start_time = 0; self.playhead_position_pixels = 0
         self.metering_queue = queue.Queue()
 
-        self.browser_frame = ctk.CTkFrame(self, corner_radius=0); self.browser_frame.grid(row=0, column=0, sticky="nsew")
-        self.v_sash = ctk.CTkFrame(self, width=6, cursor="sb_h_double_arrow"); self.v_sash.grid(row=0, column=1, sticky="ns")
+        # --- CRIAÇÃO DOS PAINÉIS PRINCIPAIS ---
+        self.browser_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="#2B2B2B")
+        self.browser_frame.grid(row=0, column=0, sticky="nsew") # <-- COLA NORTE, SUL, LESTE, OESTE
+
+        self.v_sash = ctk.CTkFrame(self, width=6, cursor="sb_h_double_arrow", fg_color="#1F1F1F")
+        self.v_sash.grid(row=0, column=1, sticky="ns")
         self.v_sash.bind("<B1-Motion>", self._on_vertical_drag)
 
-        self.right_panel = ctk.CTkFrame(self, fg_color="transparent"); self.right_panel.grid(row=0, column=2, sticky="nsew", padx=(0,10))
-        self.right_panel.grid_rowconfigure(0, weight=0); self.right_panel.grid_rowconfigure(1, weight=1); self.right_panel.grid_rowconfigure(2, weight=0); self.right_panel.grid_rowconfigure(3, weight=0)
+        self.right_panel = ctk.CTkFrame(self, fg_color="transparent")
+        self.right_panel.grid(row=0, column=2, sticky="nsew", padx=(0,10))
+        # Configuração do grid interno do painel direito
+        self.right_panel.grid_rowconfigure(0, weight=0)
+        self.right_panel.grid_rowconfigure(1, weight=1) # <-- LINHA CRÍTICA! Faz a área de conteúdo esticar
+        self.right_panel.grid_rowconfigure(2, weight=0)
+        self.right_panel.grid_rowconfigure(3, weight=0, minsize=260)
+        self.right_panel.grid_columnconfigure(0, weight=1)
 
-        self.top_bar_frame = ctk.CTkFrame(self.right_panel, corner_radius=0, fg_color="#2B2B2B")
+
+        self.top_bar_frame = ctk.CTkFrame(self.right_panel, corner_radius=0, fg_color="#2B2B2B", height=60)
         self.top_bar_frame.grid(row=0, column=0, sticky="ew", pady=(10,0))
+        self.top_bar_frame.pack_propagate(False)
         
         self.main_view_container = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.main_view_container.grid(row=1, column=0, sticky="nsew")
+        self.main_view_container.grid(row=1, column=0, sticky="nsew") # <-- COLA
         
-        self.h_sash = ctk.CTkFrame(self.right_panel, height=6, cursor="sb_v_double_arrow")
+        self.h_sash = ctk.CTkFrame(self.right_panel, height=6, cursor="sb_v_double_arrow", fg_color="#1F1F1F")
         self.h_sash.grid(row=2, column=0, sticky="ew", pady=5)
         self.h_sash.bind("<B1-Motion>", self._on_horizontal_drag)
 
         self.mixer_frame = MixerFrame(self.right_panel, self)
-        self.mixer_frame.grid(row=3, column=0, sticky="nsew")
+        self.mixer_frame.grid(row=3, column=0, sticky="nsew") # <-- COLA
         
-        self.session_view = ContentFrame(self.main_view_container, self); self.session_view.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self.arrangement_view = ArrangementFrame(self.main_view_container, self); self.arrangement_view.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.session_view = ContentFrame(self.main_view_container, self)
+        self.session_view.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.arrangement_view = ArrangementFrame(self.main_view_container, self)
+        self.arrangement_view.place(relx=0, rely=0, relwidth=1, relheight=1)
         
         self.setup_ui_controls(); self.show_session_view(); self._update_meters()
 
     def _on_vertical_drag(self, event):
         new_width = self.browser_frame.winfo_x() + event.x
-        if 200 < new_width < 500: self.grid_columnconfigure(0, minsize=new_width, weight=0)
+        if 200 < new_width < 500:
+            self.grid_columnconfigure(0, minsize=new_width, weight=0)
+
     def _on_horizontal_drag(self, event):
-        new_mixer_height = self.right_panel.winfo_height() - (self.h_sash.winfo_y() + event.y)
-        if 150 < new_mixer_height < 500:
-             self.right_panel.grid_rowconfigure(3, minsize=new_mixer_height, weight=0)
-             self.mixer_frame.configure(height=new_mixer_height)
+        new_main_height = self.main_view_container.winfo_y() + event.y
+        if 100 < new_main_height < self.right_panel.winfo_height() - 250:
+            self.right_panel.grid_rowconfigure(1, minsize=new_main_height, weight=0)
 
     def setup_ui_controls(self):
-        self.add_track_button = ctk.CTkButton(self.browser_frame, text="Adicionar Trilha", command=self.add_track); self.add_track_button.pack(padx=20, pady=20, side="bottom", fill="x")
+        self.add_track_button = ctk.CTkButton(self.browser_frame, text="Adicionar Trilha", command=self.add_track, corner_radius=8, fg_color="#555555", hover_color="#666666")
+        self.add_track_button.pack(padx=20, pady=20, side="bottom", fill="x")
+        
         self.setup_browser()
         
-        TransportFrame(self.top_bar_frame, self).pack(side="left", padx=10, pady=5)
-        view_controls = ctk.CTkFrame(self.top_bar_frame, fg_color="transparent"); view_controls.pack(side="right", padx=10, pady=5)
-        self.session_button = ctk.CTkButton(view_controls, text="Sessão", width=80, command=self.show_session_view); self.session_button.pack(side="left")
-        self.arrangement_button = ctk.CTkButton(view_controls, text="Arranjo", width=80, command=self.show_arrangement_view); self.arrangement_button.pack(side="left", padx=5)
+        transport_frame = TransportFrame(self.top_bar_frame, self)
+        transport_frame.pack(side="left", padx=10, pady=10)
+        
+        view_controls = ctk.CTkFrame(self.top_bar_frame, fg_color="transparent")
+        view_controls.pack(side="right", padx=10, pady=10)
+        self.session_button = ctk.CTkButton(view_controls, text="Sessão", width=80, command=self.show_session_view, corner_radius=6)
+        self.session_button.pack(side="left")
+        self.arrangement_button = ctk.CTkButton(view_controls, text="Arranjo", width=80, command=self.show_arrangement_view, corner_radius=6)
+        self.arrangement_button.pack(side="left", padx=5)
 
     def setup_browser(self):
         effects_category = AccordionCategory(self.browser_frame, title="Efeitos Nativos")
         effects_category.pack(fill="x", padx=10, pady=(10,5))
-        delay_button = ctk.CTkButton(effects_category.content_frame, text="Delay", command=lambda: self.apply_delay_to_track(self.active_track))
+        
+        delay_button = ctk.CTkButton(effects_category.content_frame, text="Delay", fg_color="#444444",
+                                     command=lambda: self.apply_delay_to_track(self.active_track))
         delay_button.pack(padx=10, pady=2, anchor="w", fill="x")
+
         samples_category = AccordionCategory(self.browser_frame, title="Samples")
         samples_category.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(samples_category.content_frame, text="(Nenhum sample ainda)").pack(padx=10, pady=2, anchor="w")
+
         plugins_category = AccordionCategory(self.browser_frame, title="Plugins VST")
         plugins_category.pack(fill="x", padx=10, pady=5)
         ctk.CTkLabel(plugins_category.content_frame, text="(Suporte não implementado)").pack(padx=10, pady=2, anchor="w")
@@ -98,6 +130,8 @@ class App(ctk.CTk):
         file_menu = tk.Menu(menubar, tearoff=0); file_menu.add_command(label="Salvar Projeto", command=self.save_project); file_menu.add_command(label="Carregar Projeto", command=self.load_project); file_menu.add_separator(); file_menu.add_command(label="Sair", command=self.quit); menubar.add_cascade(label="Arquivo", menu=file_menu)
         settings_menu = tk.Menu(menubar, tearoff=0); settings_menu.add_command(label="Áudio...", command=self.open_audio_settings); menubar.add_cascade(label="Configurações", menu=settings_menu)
         self.config(menu=menubar)
+        
+    # ... (O resto de todas as funções da classe App, como play, record, save, etc., continuam exatamente iguais)
     def open_audio_settings(self):
         if not (hasattr(self, 'audio_settings_window') and self.audio_settings_window.winfo_exists()): self.audio_settings_window = AudioSettingsWindow(self)
         self.audio_settings_window.focus()
@@ -137,7 +171,7 @@ class App(ctk.CTk):
             if not clip: continue
             audio_data = clip.get_trimmed_data()
             if audio_data.size > 0:
-                audio_data_float = (audio_data.astype(np.float32) / np.iinfo(audio_data.dtype).max) * track.volume.get()
+                audio_data_float = (audio_data.astype(np.float32) / np.iinfo(np.int16).max) * track.volume.get()
                 active_streams.append({"data": audio_data_float, "pos": 0, "track_index": track.track_index})
                 if len(audio_data_float) > max_len: max_len = len(audio_data_float)
         block_size = 1024
@@ -145,8 +179,7 @@ class App(ctk.CTk):
             nonlocal playhead_pos_samples
             if status: print(status)
             outdata.fill(0); chunk = np.zeros((frames, CHANNELS), dtype=np.float32)
-            active_streams_copy = active_streams[:]
-            for stream in active_streams_copy:
+            for stream in active_streams:
                 remaining = len(stream["data"]) - stream["pos"]
                 if remaining > 0:
                     samples_to_process = min(frames, remaining)
@@ -187,7 +220,7 @@ class App(ctk.CTk):
     def apply_delay_to_track(self, track):
         if not track: print("Nenhuma trilha selecionada para aplicar o efeito."); return
         clip = track.get_active_clip()
-        if not clip or not os.path.exists(clip.audio_file_path): print("Nenhum clip na trilha para aplicar efeito."); return
+        if not clip or not os.path.exists(clip.audio_file_path): print(f"A trilha '{track.track_name}' não tem clip de áudio para aplicar efeito."); return
         samplerate, audio_data_int = read(clip.audio_file_path); original_dtype = audio_data_int.dtype
         dtype_info = np.iinfo(original_dtype); audio_data_float = audio_data_int.astype(np.float32) / dtype_info.max
         delay_seconds = 0.5; decay = 0.6; delay_samples = int(delay_seconds * samplerate)
@@ -283,7 +316,7 @@ class App(ctk.CTk):
             if track_index >= len(self.tracks): continue
             track = self.tracks[track_index]; audio_data = clip.get_trimmed_data()
             if audio_data.size == 0: continue
-            audio_data_float = (audio_data.astype(np.float32) / np.iinfo(audio_data.dtype).max) * track.volume.get()
+            audio_data_float = (audio_data.astype(np.float32) / np.iinfo(np.int16).max) * track.volume.get()
             start_sample = int(start_beat * samples_per_beat); end_sample = start_sample + len(audio_data_float)
             if end_sample > len(mixer_buffer): end_sample = len(mixer_buffer); audio_data_float = audio_data_float[:end_sample - start_sample]
             mixer_buffer[start_sample:end_sample] += audio_data_float
